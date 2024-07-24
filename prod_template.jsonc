@@ -1,0 +1,628 @@
+// WORKING - NO TOUCH
+// NO LEDGER - ADD PERMS
+
+// Enable defender Manually or through a script
+
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  // General parameters
+  "parameters": {
+    "env": {
+      "type": "string",
+      "defaultValue": "dev",
+      "metadata": {
+        "description": "Select which environment is being deployed. This will influence the naming scheme of each resource."
+      },
+      "allowedValues": [
+        "dev",
+        "uat",
+        "prod"
+      ]
+    },
+    "location": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().location]",
+      "metadata": {
+        "description": "Location for all resources."
+      }
+    },
+    // Data Factory parameters.
+    "dataFactoryName": {
+      "type": "string",
+      "defaultValue": "[concat('dpres-df-', parameters('env'))]",
+      "metadata": {
+        "description": "Data Factory name."
+      }
+    },
+    "devOpsAccountName": {
+      "type": "string",
+      "defaultValue": "dpresnjak",
+      "metadata": {
+        "description": "DevOps Organization account name."
+      }
+    },
+    "devOpsRepositoryName": {
+      "type": "string",
+      "defaultValue": "Testing",
+      "metadata": {
+        "description": "DevOps Organization repository name."
+      }
+    },
+    "devOpsProjectName": {
+      "type": "string",
+      "defaultValue": "Testing",
+      "metadata": {
+        "description": "DevOps Organization project name."
+      }
+    },
+    "devOpsRepoCollabBranch": {
+      "type": "string",
+      "defaultValue": "main",
+      "metadata": {
+        "description": "DevOps Organization repository collaboration branch."
+      }
+    },
+    "devOpsRepoRootFolder": {
+      "type": "string",
+      "defaultValue": "/",
+      "metadata": {
+        "description": "DevOps Organization repository root folder.."
+      }
+    },
+    // SQL Server and DB parameters
+    "adminGroupId": {
+      "type": "string",
+      "defaultValue": "4ad445b5-6086-42d1-8c1e-14e8eca605c1",
+      "metadata": {
+        "description": "SQL Server administrator group ID. Default: Azure SQL Admins"
+      }
+    },
+    "sqlServerPrimaryName": {
+      "type": "string",
+      "defaultValue": "[concat('dpres-server-', parameters('env'), '01')]",
+      "metadata": {
+        "description": "The name of the primary SQL Server."
+      }
+    },
+    "sqlServerSecondaryName": {
+      "type": "string",
+      "defaultValue": "[concat('dpres-server-', parameters('env'), '02')]",
+      "metadata": {
+        "description": "The name of the secondary SQL Server."
+      }
+    },
+    "sqlServerSecondaryRegion": {
+      "type": "string",
+      "defaultValue": "uksouth",
+      "metadata": {
+        "description": "The location of the secondary SQL Server."
+      }
+    },
+    "sqlFailoverGroupName": {
+      "type": "string",
+      "defaultValue": "[concat('dpres-failgroup-', parameters('env'))]",
+      "metadata": {
+        "description": "The name of the failover group."
+      }
+    },
+    "databaseName": {
+      "type": "string",
+      "defaultValue": "[concat('dpres-', parameters('env'), 'sqldb')]",
+      "metadata": {
+        "description": "The name of the SQL Database."
+      }
+    },
+    "sqlDBSku": {
+      "type": "string",
+      "defaultValue": "Standard",
+      "metadata": {
+        "description": "SQL DB Sku and Tier (Standard by default). List all by using the command: 'az sql db list-editions -l uksouth -o table'"
+      },
+      "allowedValues": [
+        "Basic",
+        "Standard",
+        "Premium"
+      ]
+    },
+    "dbSize": {
+      "type": "int",
+      "defaultValue": 250,
+      "metadata": {
+        "description": "SQL DB storage size. (250GB by default)"
+      }
+    },
+    "dbCapacity": {
+      "type": "int",
+      "defaultValue": 10,
+      "metadata": {
+        "description": "DTU Capacity of the Standard SKU S0 SQL Database (10, 20, 50, 100, 200, 400)."
+      },
+      "allowedValues": [
+        10,
+        20,
+        50,
+        100,
+        200,
+        400
+      ]
+    },
+    "isMSDevOpsAuditEnabled": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "Enable Auditing of Microsoft support operations (DevOps)"
+      }
+    },
+    // Storage parameters
+    "storageAccountName": {
+      "type": "string",
+      "defaultValue": "[concat('dpresstorageacc0', parameters('env'))]",
+      "metadata": {
+        "description": "The name of the auditing storage account."
+      }
+    },
+    "containerName": {
+      "type": "string",
+      "defaultValue": "dpres-container",
+      "metadata": {
+        "description": "Name of the container used to store SEND json data."
+      }
+    },
+    "isStorageBehindVnet": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "Enable Auditing to storage behind Virtual Network or firewall rules. The user deploying the template must have an administrator or owner permissions."
+      }
+    },
+    // Event Hub parameters
+    "eventHubNamespaceName": {
+      "type": "string",
+      "defaultValue": "[concat('dpres-eh-', parameters('env'))]",
+      "metadata": {
+        "description": "Name of the EventHub Namespace."
+      }
+    },
+    "eventHubSku": {
+      "type": "string",
+      "defaultValue": "Standard",
+      "metadata": {
+        "description": "EventHub SKU and Tier (Standard by default)."
+      },
+      "allowedValues": [
+        "Basic",
+        "Standard",
+        "Premium"
+      ]
+    },
+    "authRuleName": {
+      "type": "string",
+      "defaultValue": "send-data",
+      "metadata": {
+        "description": "Event Hub authorization rule name."
+      }
+    },
+    "capacityEventHubTU": {
+      "type": "int",
+      "defaultValue": 1,
+      "metadata": {
+        "description": "Amount of Throughput Units for Event Hub. Default: 1"
+      }
+    },
+    // Key Vault
+    "keyVaultName": {
+      "type": "string",
+      "defaultValue": "[concat('dpres-keyvlt-', parameters('env'))]",
+      "metadata": {
+        "description": "Key Vault name."
+      }
+    }
+  },
+  // Variables
+  "variables": {
+    "StorageBlobDataContributor": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')]",
+    "StorageAccContributor": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '17d1049b-9a84-46fb-8f53-869881c3d3ab')]",
+    "StorageBlobDataContribGuidSrv": "[guid(resourceId('Microsoft.Storage/storageAccounts',  parameters('storageAccountName')), variables('StorageBlobDataContributor'), resourceId('Microsoft.Sql/servers', parameters('sqlServerPrimaryName')))]",
+    "StorageBlobDataContribGuidEh": "[guid(resourceId('Microsoft.Storage/storageAccounts',  parameters('storageAccountName')), variables('StorageBlobDataContributor'), resourceId('Microsoft.Sql/servers', parameters('eventHubNamespaceName')))]",
+    "StorageAccContribGuidSrv": "[guid(resourceId('Microsoft.Storage/storageAccounts',  parameters('storageAccountName')), variables('StorageAccContributor'), resourceId('Microsoft.Sql/servers', parameters('sqlServerPrimaryName')))]",
+    "tenantId": "[subscription().tenantId]"
+  },
+  // Resources
+  "resources": [
+    // Data Factory 
+    {
+      "type": "Microsoft.DataFactory/factories",
+      "apiVersion": "2018-06-01",
+      "name": "[parameters('dataFactoryName')]",
+      "location": "[parameters('location')]",
+      "identity": {
+        "type": "SystemAssigned"
+      },
+      "properties": {
+        "publicNetworkAccess": "Enabled",
+        "repoConfiguration": {
+          "type": "FactoryVSTSConfiguration",
+          "accountName": "[parameters('devOpsAccountName')]",
+          "repositoryName": "[parameters('devOpsRepositoryName')]",
+          "projectName": "[parameters('devOpsProjectName')]",
+          "collaborationBranch": "[parameters('devOpsRepoCollabBranch')]",
+          "rootFolder": "[parameters('devOpsRepoRootFolder')]"
+        }
+      }
+    },
+    // SQL Server Primary
+    {
+      "type": "Microsoft.Sql/servers",
+      "kind": "v12.0",
+      "name": "[parameters('sqlServerPrimaryName')]",
+      "apiVersion": "2023-05-01-preview",
+      "location": "[parameters('location')]",
+      "identity": {
+        "type": "SystemAssigned"
+      },
+      "properties": {
+        "version": "12.0",
+        "minimalTlsVersion": "1.2",
+        "publicNetworkAccess": "Disabled",
+        "restrictOutboundNetworkAccess": "Disabled",
+        "administrators": {
+          "administratorType": "ActiveDirectory",
+          "azureADOnlyAuthentication": "true",
+          "login": "dpresnjak@iolap.com", // Change to group
+          "principalType": "User", // Group
+          "sid": "[parameters('AdminGroupId')]",
+          "tenantId": "[variables('TenantId')]"
+        }
+      },
+      "resources": [
+        // Azure SQL Database     
+        {
+          "name": "[parameters('databaseName')]",
+          "type": "databases",
+          "apiVersion": "2023-08-01-preview",
+          "location": "[parameters('location')]",
+          "dependsOn": [
+            "[parameters('sqlServerPrimaryName')]"
+          ],
+          "sku": {
+            "name": "[parameters('sqlDBSku')]",
+            "tier": "[parameters('sqlDBSku')]",
+            "capacity": "[parameters('dbCapacity')]",
+            "size": "[parameters('dbSize')]"
+          },
+          "properties": {
+            "collation": "SQL_Latin1_General_CP1_CI_AS",
+            "catalogCollation": "SQL_Latin1_General_CP1_CI_AS",
+            "zoneRedundant": false,
+            "readScale": "Disabled",
+            "secondaryType": "Geo",
+            "requestedBackupStorageRedundancy": "Zone",
+            "isLedgerOn": true,
+            "availabilityZone": "NoPreference"
+          }
+        },
+        // Failover Group
+        {
+          "apiVersion": "2023-05-01-preview",
+          "type": "failoverGroups",
+          "condition": "[equals(parameters('env'), 'prod')]",
+          "name": "[parameters('sqlFailoverGroupName')]",
+          "dependsOn": [
+            "[parameters('sqlServerPrimaryName')]",
+            "[parameters('sqlServerSecondaryName')]",
+            "[resourceId('Microsoft.Sql/servers/databases', parameters('sqlServerPrimaryName'), parameters('databaseName'))]",
+            "[resourceId('Microsoft.Sql/servers', parameters('sqlServerSecondaryName'))]",
+            "[parameters('storageAccountName')]",
+            "[extensionResourceId(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), 'Microsoft.Authorization/roleAssignments/', variables('StorageBlobDataContribGuidSrv'))]"
+          ],
+          "properties": {
+            "serverName": "[parameters('sqlServerPrimaryName')]",
+            "partnerServers": [
+              {
+                "id": "[resourceId('Microsoft.Sql/servers', parameters('sqlServerSecondaryName'))]"
+              }
+            ],
+            "readWriteEndpoint": {
+              "failoverPolicy": "Manual"
+            },
+            "readOnlyEndpoint": {
+              "failoverPolicy": "Disabled"
+            },
+            "databases": [
+              "[resourceId('Microsoft.Sql/servers/databases', parameters('sqlServerPrimaryName'), parameters('databaseName'))]"
+            ]
+          }
+        },
+        {
+          // SQL Server Auditing settings
+          "type": "auditingSettings",
+          "apiVersion": "2023-08-01-preview",
+          "name": "DefaultAuditingSettings",
+          "dependsOn": [
+            "[parameters('sqlServerPrimaryName')]",
+            "[parameters('storageAccountName')]",
+            "[extensionResourceId(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), 'Microsoft.Authorization/roleAssignments/', variables('StorageBlobDataContribGuidSrv'))]"
+          ],
+          "properties": {
+            "state": "Enabled",
+            "storageEndpoint": "[reference(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), '2019-06-01').PrimaryEndpoints.Blob]",
+            "storageAccountAccessKey": "[if(parameters('isStorageBehindVnet'), json('null'), listKeys(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), '2019-06-01').keys[0].value)]",
+            "storageAccountSubscriptionId": "[subscription().subscriptionId]",
+            "isStorageSecondaryKeyInUse": false
+          }
+        },
+        {
+          // Microsoft support operations auditing - Conditional
+          "condition": "[parameters('isMSDevOpsAuditEnabled')]",
+          "type": "devOpsAuditingSettings",
+          "apiVersion": "2023-08-01-preview",
+          "name": "Default",
+          "dependsOn": [
+            "[parameters('sqlServerPrimaryName')]",
+            "[parameters('sqlServerSecondaryName')]",
+            "[parameters('storageAccountName')]",
+            "[variables('StorageBlobDataContribGuidSrv')]"
+          ],
+          "properties": {
+            "state": "Enabled",
+            "storageEndpoint": "[reference(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), '2019-06-01').PrimaryEndpoints.Blob]",
+            "storageAccountAccessKey": "[if(parameters('isStorageBehindVnet'), json('null'), listKeys(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), '2019-06-01').keys[0].value)]",
+            "storageAccountSubscriptionId": "[subscription().subscriptionId]",
+            "isStorageSecondaryKeyInUse": false
+          }
+        }
+      ]
+    },
+    // SQL Server Secondary
+    {
+      "type": "Microsoft.Sql/servers",
+      "apiVersion": "2023-05-01-preview",
+      "condition": "[equals(parameters('env'), 'prod')]",
+      "name": "[parameters('sqlServerSecondaryName')]",
+      "location": "[parameters('sqlServerSecondaryRegion')]",
+      "kind": "v12.0",
+      "properties": {
+        "version": "12.0",
+        "minimalTlsVersion": "1.2",
+        "publicNetworkAccess": "Disabled",
+        "restrictOutboundNetworkAccess": "Disabled",
+        "administrators": {
+          "administratorType": "ActiveDirectory",
+          "azureADOnlyAuthentication": "true",
+          "login": "dpresnjak@iolap.com",
+          "principalType": "User",
+          "sid": "[parameters('AdminGroupId')]",
+          "tenantId": "[variables('TenantId')]"
+        },
+        "dependsOn": [
+          "[parameters('sqlServerPrimaryName')]",
+          "[resourceId('Microsoft.Sql/servers', parameters('sqlServerPrimaryName'))]"
+        ]
+      },
+      "resources": [
+        {
+          // SQL Server Auditing settings
+          "type": "auditingSettings",
+          "apiVersion": "2023-08-01-preview",
+          "name": "DefaultAuditingSettings",
+          "dependsOn": [
+            "[parameters('sqlServerSecondaryName')]",
+            "[parameters('storageAccountName')]",
+            "[extensionResourceId(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), 'Microsoft.Authorization/roleAssignments/', variables('StorageBlobDataContribGuidSrv'))]"
+          ],
+          "properties": {
+            "state": "Enabled",
+            "storageEndpoint": "[reference(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), '2019-06-01').PrimaryEndpoints.Blob]",
+            "storageAccountAccessKey": "[if(parameters('isStorageBehindVnet'), json('null'), listKeys(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), '2019-06-01').keys[0].value)]",
+            "storageAccountSubscriptionId": "[subscription().subscriptionId]",
+            "isStorageSecondaryKeyInUse": false
+          }
+        },
+        // Microsoft support operations auditing - Conditional
+        {
+          "condition": "[parameters('isMSDevOpsAuditEnabled')]",
+          "type": "devOpsAuditingSettings",
+          "apiVersion": "2023-08-01-preview",
+          "name": "Default",
+          "dependsOn": [
+            "[parameters('sqlServerPrimaryName')]",
+            "[parameters('sqlServerSecondaryName')]",
+            "[parameters('storageAccountName')]",
+            "[variables('StorageBlobDataContribGuidSrv')]"
+          ],
+          "properties": {
+            "state": "Enabled",
+            "storageEndpoint": "[reference(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), '2019-06-01').PrimaryEndpoints.Blob]",
+            "storageAccountAccessKey": "[if(parameters('isStorageBehindVnet'), json('null'), listKeys(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), '2019-06-01').keys[0].value)]",
+            "storageAccountSubscriptionId": "[subscription().subscriptionId]",
+            "isStorageSecondaryKeyInUse": false
+          }
+        }
+      ]
+    },
+    // Ledger Enable for DBs
+    {
+      "condition": "[equals(parameters('env'), 'prod')]",
+      "type": "Microsoft.Sql/servers/databases/ledgerDigestUploads",
+      "apiVersion": "2023-05-01-preview",
+      "name": "[format('{0}/{1}/{2}', parameters('sqlServerPrimaryName'), parameters('databaseName'), 'current')]",
+      "properties": {
+        "digestStorageEndpoint": "[format('{0}{1}{2}', 'https://', parameters('storageAccountName'), '.blob.core.windows.net/')]"
+      },
+      "dependsOn": [
+        "[parameters('sqlServerPrimaryName')]",
+        "[resourceId('Microsoft.Sql/servers/databases', parameters('sqlServerPrimaryName'), parameters('databaseName'))]",
+        "[resourceId('Microsoft.Sql/servers/failoverGroups', parameters('sqlServerPrimaryName'), parameters('sqlFailoverGroupName'))]",
+        "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]",
+        "[extensionResourceId(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), 'Microsoft.Authorization/roleAssignments/', variables('StorageAccContribGuidSrv'))]"
+      ]
+    },
+    // Storage account
+    {
+      "type": "Microsoft.Storage/storageAccounts",
+      "name": "[parameters('storageAccountName')]",
+      "apiVersion": "2023-05-01",
+      "location": "[parameters('location')]",
+      "sku": {
+        "name": "Standard_LRS"
+      },
+      "identity": {
+        "type": "SystemAssigned"
+      },
+      "kind": "StorageV2",
+      "properties": {
+        "publicNetworkAccess": "Enabled",
+        "allowBlobPublicAccess": false,
+        "allowSharedKeyAccess": true,
+        "isHnsEnabled": true,
+        "accessTier": "Hot",
+        "networkAcls": {
+          "bypass": "AzureServices",
+          "resourceAccessRules": [
+            {
+              "tenantId": "[variables('tenantId')]",
+              "resourceId": "[resourceId('Microsoft.DataFactory/factories', parameters('dataFactoryName'))]"
+            }
+          ],
+          "defaultAction": "[if(parameters('isStorageBehindVnet'), 'Deny', 'Allow')]"
+        }
+      },
+      "resources": [
+        {
+          // Storage Blob Data Contributor for SQL Server
+          "type": "Microsoft.Storage/storageAccounts/providers/roleAssignments",
+          "apiVersion": "2022-04-01",
+          "name": "[format('{0}{1}{2}', parameters('storageAccountName'), '/Microsoft.Authorization/', variables('StorageBlobDataContribGuidSrv'))]",
+          "dependsOn": [
+            "[resourceId('Microsoft.Sql/servers', parameters('sqlServerPrimaryName'))]",
+            "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]"
+          ],
+          "properties": {
+            "roleDefinitionId": "[variables('StorageBlobDataContributor')]",
+            "principalId": "[reference(resourceId('Microsoft.Sql/servers', parameters('sqlServerPrimaryName')), '2023-05-01-preview', 'Full').identity.principalId]",
+            "scope": "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]",
+            "principalType": "ServicePrincipal"
+          }
+        },
+        {
+          // Storage Account Contributor for SQL Server
+          "type": "Microsoft.Storage/storageAccounts/providers/roleAssignments",
+          "apiVersion": "2022-04-01",
+          "name": "[format('{0}{1}{2}', parameters('storageAccountName'), '/Microsoft.Authorization/', variables('StorageAccContribGuidSrv'))]",
+          "dependsOn": [
+            "[resourceId('Microsoft.Sql/servers', parameters('sqlServerPrimaryName'))]",
+            "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]"
+          ],
+          "properties": {
+            "roleDefinitionId": "[variables('StorageAccContributor')]",
+            "principalId": "[reference(resourceId('Microsoft.Sql/servers', parameters('sqlServerPrimaryName')), '2023-05-01-preview', 'Full').identity.principalId]",
+            "scope": "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]",
+            "principalType": "ServicePrincipal"
+          }
+        },
+        {
+          // Storage Blob Data Contributor for EventHub
+          "type": "Microsoft.Storage/storageAccounts/providers/roleAssignments",
+          "apiVersion": "2022-04-01",
+          "name": "[format('{0}{1}{2}', parameters('storageAccountName'), '/Microsoft.Authorization/', variables('StorageBlobDataContribGuidEh'))]",
+          "dependsOn": [
+            "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]",
+            "[resourceId('Microsoft.EventHub/namespaces/eventhubs',parameters('eventHubNamespaceName'), concat(parameters('eventHubNamespaceName'), '-send'))]"
+          ],
+          "properties": {
+            "roleDefinitionId": "[variables('StorageBlobDataContributor')]",
+            "principalId": "[reference(resourceId('Microsoft.EventHub/namespaces', parameters('eventHubNamespaceName')), '2024-01-01', 'Full').identity.principalId]",
+            "scope": "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]",
+            "principalType": "ServicePrincipal"
+          }
+        }
+      ]
+    },
+    // Event Hub Namespace
+    {
+      "type": "Microsoft.EventHub/namespaces",
+      "apiVersion": "2024-01-01",
+      "name": "[parameters('eventHubNamespaceName')]",
+      "location": "[parameters('location')]",
+      "sku": {
+        "name": "[parameters('eventHubSku')]",
+        "tier": "[parameters('eventHubSku')]",
+        "capacity": 1
+      },
+      "identity": {
+        "type": "SystemAssigned"
+      },
+      "properties": {
+        "isAutoInflateEnabled": false,
+        "maximumThroughputUnits": 0
+      }
+    },
+    // Event Hub
+    {
+      "type": "Microsoft.EventHub/namespaces/eventhubs",
+      "apiVersion": "2024-01-01",
+      "name": "[format('{0}/{0}{1}', parameters('eventHubNamespaceName'), '-send')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.EventHub/namespaces', parameters('eventHubNamespaceName'))]"
+      ],
+      "properties": {
+        "messageRetentionInDays": 7,
+        "partitionCount": "[parameters('capacityEventHubTU')]",
+        "captureDescription": {
+          "destination": {
+            "name": "EventHubArchive.AzureBlockBlob",
+            "properties": {
+              "archiveNameFormat": "{Namespace}/{EventHub}_{PartitionId}/{Year}_{Month}_{Day}_{Hour}_{Minute}_{Second}",
+              "blobContainer": "[parameters('containerName')]",
+              "storageAccountResourceId": "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]"
+            }
+          },
+          "enabled": true,
+          "encoding": "Avro",
+          "intervalInSeconds": 300,
+          "sizeLimitInBytes": 314572800,
+          "skipEmptyArchives": true
+        }
+      },
+      "resources": [
+        {
+          "type": "authorizationRules",
+          "apiVersion": "2024-01-01",
+          "name": "[parameters('authRuleName')]",
+          "properties": {
+            "rights": [ "Send" ]
+          },
+          "dependsOn": [
+            "[resourceId('Microsoft.EventHub/namespaces', parameters('eventHubNamespaceName'))]",
+            "[resourceId('Microsoft.EventHub/namespaces/eventhubs',parameters('eventHubNamespaceName'), concat(parameters('eventHubNamespaceName'), '-send'))]"
+          ]
+        }
+      ]
+    },
+    // Key Vault
+    {
+      "type": "Microsoft.KeyVault/vaults",
+      "name": "[parameters('keyVaultName')]",
+      "location": "[parameters('location')]",
+      "apiVersion": "2023-02-01",
+      "properties": {
+        "enableRbacAuthorization": true,
+        "tenantId": "[variables('tenantId')]",
+        "enabledForTemplateDeployment": false,
+        "sku": {
+          "family": "A",
+          "name": "standard"
+        },
+        "identity": {
+          "type": "SystemAssigned"
+        },
+        "networkAcls": {
+          "bypass": "AzureServices",
+          "defaultAction": "Deny"
+        }
+      },
+      "dependsOn": []
+    }
+  ]
+}
