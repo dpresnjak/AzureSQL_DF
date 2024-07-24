@@ -406,6 +406,7 @@
           "type": "auditingSettings",
           "apiVersion": "2023-08-01-preview",
           "name": "DefaultAuditingSettings",
+          "condition": "[equals(parameters('env'), 'prod')]",
           "dependsOn": [
             "[parameters('sqlServerSecondaryName')]",
             "[parameters('storageAccountName')]",
@@ -421,7 +422,7 @@
         },
         // Microsoft support operations auditing - Conditional
         {
-          "condition": "[parameters('isMSDevOpsAuditEnabled')]",
+          "condition": "[and(parameters('isMSDevOpsAuditEnabled'), equals(parameters('env'), 'prod'))]",
           "type": "devOpsAuditingSettings",
           "apiVersion": "2023-08-01-preview",
           "name": "Default",
