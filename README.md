@@ -14,7 +14,7 @@ vNets are present in the main solution although they aren't setup in my testing 
 
 In this case there are already existing virtual desktops setup for accessing resources within the vNet.
 
-# Template parameters
+## Template parameters
 Parameters are specified in the first section of the deployment ARM template, and they are used to avoid hard-coding information into the template. Parameters are also used to make this template environment-agnostic, meaning that it can be used across different environments, Resource Groups, or Subscriptions.
 
 Every parameter has a description that can be read by hovering over the information icon which helps with understanding different options, along with set default values.
