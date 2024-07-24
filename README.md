@@ -10,7 +10,9 @@ This template deploys the following resources:
 
 Depending on the environment, for Production, it will deploy two SQL Servers in a Failover Group with replication. Otherwise only one SQL Server will be deployed. Production environment also has additional auditing setup, automatic ledger digest enabled. All authentication is done through Entra ID with a couple of Role Assignments being created, although this assumes there are sufficient privileges to create resources in a chosen Resource Group.
 
-vNets are present in the main solution although they aren't setup in my testing environment at the moment. Solution with vNets is in a separate branch for now.
+vNets are present in the main solution although they aren't setup in my testing environment at the moment. Solution with vNets is in a separate branch for now (add_vnet).
+
+In this case there are already existing virtual desktops setup for accessing resources within the vNet.
 
 # Template parameters
 Parameters are specified in the first section of the deployment ARM template, and they are used to avoid hard-coding information into the template. Parameters are also used to make this template environment-agnostic, meaning that it can be used across different environments, Resource Groups, or Subscriptions.
