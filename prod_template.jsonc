@@ -27,6 +27,13 @@
         "description": "Location for all resources."
       }
     },
+    "vnetName": {
+      "type": "string",
+      "defaultValue": "vNetName",
+      "metadata": {
+        "description": "Virtual network name."
+      }
+    },
     // Data Factory parameters.
     "dataFactoryName": {
       "type": "string",
@@ -476,18 +483,46 @@
         "allowBlobPublicAccess": false,
         "allowSharedKeyAccess": true,
         "isHnsEnabled": true,
-        "accessTier": "Hot",
-        "networkAcls": {
-          "bypass": "AzureServices",
-          "resourceAccessRules": [
-            {
-              "tenantId": "[variables('tenantId')]",
-              "resourceId": "[resourceId('Microsoft.DataFactory/factories', parameters('dataFactoryName'))]"
-            }
-          ],
-          "defaultAction": "[if(parameters('isStorageBehindVnet'), 'Deny', 'Allow')]"
-        }
-      },
+                "accessTier": "Hot",
+                "networkAcls": {
+                    "bypass": "AzureServices",
+                    "resourceAccessRules": [
+                        {
+                            "tenantId": "[variables('tenantId')]",
+                            "resourceId": "[resourceId('Microsoft.DataFactory/factories', parameters('dataFactoryName'))]"
+                        }
+                    ],
+                    "virtualNetworkRules": [
+                        {
+                            "id": "[resourceId('Microsoft.Network/virtualNetworks/subnets', parameters('vnetName'), 'subnet01')]",
+                            "action": "Allow"
+                        },
+                        {
+                            "id": "[resourceId('Microsoft.Network/virtualNetworks/subnets', parameters('vnetName'), 'subnet02')]",
+                            "action": "Allow"
+                        },
+                        {
+                            "id": "[resourceId('Microsoft.Network/virtualNetworks/subnets', parameters('vnetName'), 'subnet03')]",
+                            "action": "Allow"
+                        }
+                    ],
+                    "defaultAction": "[if(parameters('isStorageBehindVnet'), 'Deny', 'Allow')]"
+                },
+                "encryption": {
+                    "requireInfrastructureEncryption": false,
+                    "services": {
+                        "file": {
+                            "keyType": "Account",
+                            "enabled": true
+                        },
+                        "blob": {
+                            "keyType": "Account",
+                            "enabled": true
+                        }
+                    },
+                    "keySource": "Microsoft.Storage"
+                }
+            },
       "resources": [
         {
           // Storage Blob Data Contributor for SQL Server
@@ -618,8 +653,22 @@
           "type": "SystemAssigned"
         },
         "networkAcls": {
-          "bypass": "AzureServices",
-          "defaultAction": "Deny"
+            "bypass": "AzureServices",
+            "defaultAction": "Deny",
+            "virtualNetworkRules": [
+                {
+                    "id": "[resourceId('Microsoft.Network/virtualNetworks/subnets', parameters('vnetName'), 'arg-az1-srv-01')]",
+                    "action": "Allow"
+                },
+                {
+                    "id": "[resourceId('Microsoft.Network/virtualNetworks/subnets', parameters('vnetName'), 'arg-az1-uat-01')]",
+                    "action": "Allow"
+                },
+                {
+                    "id": "[resourceId('Microsoft.Network/virtualNetworks/subnets', parameters('vnetName'), 'arg-az1-vm-01')]",
+                    "action": "Allow"
+                }
+            ]
         }
       },
       "dependsOn": []
