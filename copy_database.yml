@@ -1,0 +1,124 @@
+# This YAML file defines two stages to copy a database between two environments. Simple solution to assist during testing.
+# There are two possible solutions:
+  # Copy DEV to UAT
+  # Copy UAT to PROD
+# There are multiple stages described with comments. 
+# In short, the process is to delete the destination database and copy it from source after that due to Azure CLI lacking an overwrite feature.
+# In PROD there are additional stages that enable Automatic Ledger Digest and update the Failover Group as the databases inside are technically deleted.
+
+parameters:
+- name: pipeline
+  displayName: Choose which action will be run.
+  type: string
+  default: devToUat
+  values:
+  - devToUat
+  - uatToProd
+
+trigger:
+- none  # Manual trigger
+
+pool:
+  vmImage: 'windows-latest'
+
+variables:
+  # DEV
+  devResourceGroup: 'dpres-RG'
+  devServer: 'dpres-server-dev01'
+  devDatabase: 'dpres-devsqldb'
+  # UAT
+  uatResourceGroup: 'dpres-RG'
+  uatServer: 'dpres-server-uat01'
+  uatDatabase: 'dpres-uatsqldb'
+  # PROD
+  prodResourceGroup: 'dpres-RG'
+  prodServerPrim: 'dpres-server-prod01'
+  prodServerSec: 'dpres-server-prod02'
+  prodDatabase: 'dpres-prodsqldb'
+  failoverGrpName: 'dpres-failgroup-prod'
+  storageEndpoint: 'https://dpresstorageacc0prod.blob.core.windows.net' # Only needed for Prod; Automatic Ledger Digest
+
+stages:
+##################
+### Dev to UAT ###
+##################
+- stage: DeleteUatDatabase # Delete UAT DB
+  condition: ${{ eq(parameters.pipeline, 'devToUat')}}
+  jobs:
+  - job: DeleteUatDB
+    steps:
+    - task: AzureCLI@2
+      inputs:
+        azureSubscription: 'SrvConn'
+        scriptType: 'ps'
+        scriptLocation: 'inlineScript'
+        inlineScript: 'az sql db delete --resource-group $(uatResourceGroup) --server $(uatServer) --name $(uatDatabase) --yes'
+
+- stage: CopyDevDatabase # Copy DEV to UAT
+  condition: ${{ eq(parameters.pipeline, 'devToUat')}}
+  jobs:
+  - job: CopyDevToUat
+    steps:
+    - task: AzureCLI@2
+      inputs:
+        azureSubscription: 'SrvConn'
+        scriptType: 'ps'
+        scriptLocation: 'inlineScript'
+        inlineScript: 'az sql db copy --resource-group $(devResourceGroup) --server $(devServer) --name $(devDatabase) --dest-resource-group $(uatResourceGroup) --dest-server $(uatServer) --dest-name $(uatDatabase)'
+
+###################
+### UAT to Prod ###
+###################
+- stage: DeleteProdDatabase # Delete PROD DBs
+  condition: ${{ eq(parameters.pipeline, 'uatToProd')}}
+  jobs:
+  - job: DeleteProdDBs
+    steps:
+    - task: AzureCLI@2 # Delete DB from Primary
+      inputs:
+        azureSubscription: 'SrvConn'
+        scriptType: 'ps'
+        scriptLocation: 'inlineScript'
+        inlineScript: 'az sql db delete --resource-group $(prodResourceGroup) --server $(prodServerPrim) --name $(prodDatabase) --yes'
+    - task: AzureCLI@2 # Delete DB from Secondary
+      inputs:
+        azureSubscription: 'SrvConn'
+        scriptType: 'ps'
+        scriptLocation: 'inlineScript'
+        inlineScript: 'az sql db delete --resource-group $(prodResourceGroup) --server $(prodServerSec) --name $(prodDatabase) --yes'
+
+- stage: CopyUatDatabase # Copy UAT to PROD
+  condition: ${{ eq(parameters.pipeline, 'uatToProd')}}
+  jobs:
+  - job: CopyUatToProd
+    steps:
+    - task: AzureCLI@2
+      inputs:
+        azureSubscription: 'SrvConn'
+        scriptType: 'ps'
+        scriptLocation: 'inlineScript'
+        inlineScript: 'az sql db copy --resource-group $(uatResourceGroup) --server $(uatServer) --name $(uatDatabase) --dest-resource-group $(prodResourceGroup) --dest-server $(prodServerPrim) --dest-name $(prodDatabase)'
+
+- stage: EnableProdLedger # Enable Automatic Ledger digest on Prod
+  condition: ${{ eq(parameters.pipeline, 'uatToProd')}}
+  jobs:
+  - job: EnableProdLedger
+    steps:
+    - task: AzureCLI@2
+      inputs:
+        azureSubscription: 'SrvConn'
+        scriptType: 'ps'
+        scriptLocation: 'inlineScript'
+        inlineScript: 'az sql db ledger-digest-uploads enable --name $(prodDatabase) --resource-group $(prodResourceGroup) --server $(ProdServerPrim) --endpoint $(storageEndpoint)'
+
+- stage: UpdateFailoverGroup # Add primary DB to FailoverGroup; Will get replicated to secondary
+  condition: ${{ eq(parameters.pipeline, 'uatToProd')}}
+  jobs:
+  - job: UpdateFailoverGroup
+    steps:
+    - task: AzureCLI@2
+      inputs:
+        azureSubscription: 'SrvConn'
+        scriptType: 'ps'
+        scriptLocation: 'inlineScript'
+        inlineScript: 'az sql failover-group update --name $(failoverGrpName) --add-db $(prodDatabase) --server $(ProdServerPrim) --resource-group $(prodResourceGroup)'
